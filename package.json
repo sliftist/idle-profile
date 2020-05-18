@@ -1,6 +1,6 @@
 {
   "name": "idle-profile",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "main": "index.ts",
   "license": "MIT",
   "devDependencies": {
