@@ -11,6 +11,12 @@ import "./index.less";
 
 //configure({ reactionScheduler: (callback) => Promise.resolve().then(callback) });
 
+window.addEventListener("keypress", (e) => {
+    if(e.code === "KeyI" && e.ctrlKey && e.shiftKey) {
+        require("electron").remote.getCurrentWindow().toggleDevTools();
+    }
+});
+
 const bucketScaleExponent = 1.5;
 const confidence = 0.95;
 const mainBucketCount = 10;
@@ -85,28 +91,33 @@ function defaultDist(): Dist {
 }
 
 
+spawnProcess();
+function spawnProcess() {
+    let process = child_process.spawn("powershell");
+    let pendingData = "";
+    process.stdout.on("data", data => {
+        pendingData += data.toString();
+        while(true) {
+            let lineIndex = pendingData.indexOf("\n");
+            if(lineIndex < 0) break;
+            let line = pendingData.slice(0, lineIndex);
+            line = line.replace(/\r/g, "");
+            pendingData = pendingData.slice(lineIndex + 1);
+            onCounterLine(line);
+        }
+    });
 
-let process = child_process.spawn("powershell");
-let pendingData = "";
-process.stdout.on("data", data => {
-    pendingData += data.toString();
-    while(true) {
-        let lineIndex = pendingData.indexOf("\n");
-        if(lineIndex < 0) break;
-        let line = pendingData.slice(0, lineIndex);
-        line = line.replace(/\r/g, "");
-        pendingData = pendingData.slice(lineIndex + 1);
-        onCounterLine(line);
-    }
-});
+    process.on("error", e => {
+        console.error("processs error", e);
+    });
 
+    process.on("close", () => {
+        console.error(`process closed at ${(new Date()).toString()}. Restarting`);
+        spawnProcess();
+    });
 
-
-
-//todonext;
-// Hmm... this code is too slow. Maybe... do a kind of bucketing system... where we only move entire buckets at once?
-//  Hmm... Yeah, actually... arbitrary heights of blocks is fine... uh... yeah, that works... everything shifts back,
-//  but... if it is logarithmic... eventually the shifts become so small it doens't matter...
+    process.stdin.write(`Get-Counter -Counter "\\Processor(_Total)\\% Processor Time" -Continuous \n`);
+}
 
 
 let timeBuckets: {
@@ -164,8 +175,6 @@ function onCounterLine(line: string) {
 
     mainComponent?.forceUpdate();
 }
-
-process.stdin.write(`Get-Counter -Counter "\\Processor(_Total)\\% Processor Time" -Continuous \n`);
 
 
 class BackgroundBar extends preact.Component<{
@@ -247,7 +256,7 @@ class MainComponent extends preact.Component<{}, {}> {
 
         return (
             <div>
-                <title>CPU Usage&nbsp;&nbsp;&nbsp;&nbsp;{formatPercent(min)} — {formatPercent(max)}</title>
+                <title>{formatPercent(min).slice(0, -1)}-{formatPercent(max)}</title>
                 {/*Array(101).fill(0).map((x, i) =>
                     <div style={{color: getStatusColor(i / 100)}}>{i.toString()}, {getStatusColor(i / 100)}</div>
                 )*/}

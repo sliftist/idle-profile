@@ -10,7 +10,9 @@ function getConfig(env, argv) {
         target: "web",
         externals: [
             {
-                "child_process": "commonjs child_process"
+                "child_process": "commonjs child_process",
+                "fs": "commonjs fs",
+                "electron": "commonjs electron",
             },
             /*
             function(context, request, callback) {
