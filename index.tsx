@@ -8,6 +8,7 @@ import * as preact from "preact";
 import { normalci } from "jstat";
 
 import "./index.less";
+import { setInterval } from "timers";
 
 //configure({ reactionScheduler: (callback) => Promise.resolve().then(callback) });
 
@@ -91,11 +92,24 @@ function defaultDist(): Dist {
 }
 
 
+let activeProcess: child_process.ChildProcessWithoutNullStreams|undefined;
 spawnProcess();
 function spawnProcess() {
-    let process = child_process.spawn("powershell");
+    if(activeProcess) {
+        try {
+            activeProcess.kill();
+        } catch(e) {
+            console.error(`Erroring when killing process. Ignoring error and continuing`, e);
+        }
+    }
+    let ourProcess = child_process.spawn("powershell");
+    activeProcess = ourProcess;
     let pendingData = "";
-    process.stdout.on("data", data => {
+    ourProcess.stdout.on("data", data => {
+        if(ourProcess !== activeProcess) {
+            ourProcess.kill();
+            return;
+        }
         pendingData += data.toString();
         while(true) {
             let lineIndex = pendingData.indexOf("\n");
@@ -107,17 +121,30 @@ function spawnProcess() {
         }
     });
 
-    process.on("error", e => {
+    ourProcess.on("error", e => {
         console.error("processs error", e);
     });
 
-    process.on("close", () => {
+    ourProcess.on("close", () => {
         console.error(`process closed at ${(new Date()).toString()}. Restarting`);
-        spawnProcess();
+        if(ourProcess === activeProcess) {
+            spawnProcess();
+        }
     });
 
-    process.stdin.write(`Get-Counter -Counter "\\Processor(_Total)\\% Processor Time" -Continuous \n`);
+    ourProcess.stdin.write(`Get-Counter -Counter "\\Processor(_Total)\\% Processor Time" -Continuous \n`);
 }
+
+let lastCounterLineTime = Date.now();
+setInterval(() => {
+    let curTime = Date.now();
+    let timeSinceLastLine = curTime - lastCounterLineTime;
+    if(timeSinceLastLine > 1000 * 60 * 5) {
+        timeSinceLastLine = curTime;
+        console.error(`We stopped getting output from powershell (nothing in the last 5 minutes)? Killing the process and starting a new one. ` + new Date());
+        spawnProcess();
+    }
+}, 60 * 1000);
 
 
 let timeBuckets: {
@@ -134,6 +161,8 @@ timeBuckets.push({
 let mainComponent: MainComponent|undefined;
 
 function onCounterLine(line: string) {
+    lastCounterLineTime = Date.now();
+
     let usage = +line;
     // Because the numbers don't come from javascript, we can't just see if usage.toString() === line.trim(),
     //  because we could be given valid numbers that simply have a different representation in javascript than in C#.
